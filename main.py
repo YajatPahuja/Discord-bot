@@ -2,69 +2,73 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 import os
-import csv
 
-# Load environment variables
 load_dotenv()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
-# Path to CSV file
-CSV_FILE = 'user_data.csv'
-
-# Ensure the CSV file exists with headers
-if not os.path.exists(CSV_FILE):
-    with open(CSV_FILE, mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(['user_id', 'name', 'branch', 'age'])
-
-# Bot setup with necessary intents
 intents = discord.Intents.default()
 intents.members = True
-intents.message_content = True  # Needed for bot.wait_for to read DM content
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Function to save user data to CSV
-def save_user_data(user_id, name, branch, age):
-    with open(CSV_FILE, mode='a', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow([user_id, name, branch, age])
-
-# Bot event: on_ready
 @bot.event
 async def on_ready():
-    print(f'Logged in as {bot.user}')
+    print(f' Logged in as {bot.user}')
 
-# Bot event: on_member_join
 @bot.event
 async def on_member_join(member):
     try:
-        await member.send("👋 Welcome! Let's get to know you.")
+        await member.send("👋 Welcome to the server! You're about to embark on a special quest: **The Digital Chronicles: Rise of ACM**.\nType your answers to proceed through each level. Let’s begin!")
 
         def check(m):
             return m.author == member and isinstance(m.channel, discord.DMChannel)
 
-        await member.send("What's your **name**?")
-        name = await bot.wait_for('message', check=check, timeout=60)
-
-        await member.send("What's your **branch**?")
-        branch = await bot.wait_for('message', check=check, timeout=60)
-
-        await member.send("What's your **age**? (Enter a number)")
+        # Level 1
+        await member.send("📜 **Level 1: The Origin Spark**\n"
+                          "*In**What is the name of this organization they formed?**")
         while True:
-            age = await bot.wait_for('message', check=check, timeout=60)
-            if age.content.isdigit():
+            msg = await bot.wait_for('message', check=check, timeout=90)
+            if msg.content.lower() in ["acm", "association for computing machinery"]:
                 break
-            await member.send("Age must be a number. Try again:")
+            await member.send(" That's not quite right. Try again!")
 
-        save_user_data(member.id, name.content, branch.content, int(age.content))
-        await member.send("Thanks! Your info has been recorded.")
+        # Level 2
+        await member.send("📜 **Level 2: The First Flame**\n"
+                          "*The early ACM didn't hoard knowledge. They spread it.*\n"
+                          " **What did ACM start publishing to spread computer science breakthroughs?**")
+        while True:
+            msg = await bot.wait_for('message', check=check, timeout=90)
+            if msg.content.lower() in ["academic journals", "research papers", "publications"]:
+                break
+            await member.send("Not the answer we're looking for. Try again!")
+
+        # Level 3
+        await member.send("📜 **Level 3: The Vision Ahead**\n"
+                          "*ACM grew globally, yet its mission stayed strong.*\n"
+                          "**Which of these best represents one of ACM’s current goals?**\n"
+                          "(Options: 'advance computing', 'promote education', 'publish research')")
+        while True:
+            msg = await bot.wait_for('message', check=check, timeout=90)
+            if msg.content.lower() in ["advance computing", "promote education", "publish research"]:
+                break
+            await member.send("That's not quite a goal. Choose one from the options.")
+
+        # Final Level
+        await member.send("📜 **Final Level: The Torchbearer**\n"
+                          "*As of today, ACM is led by a visionary guiding it through the digital age.*\n"
+                          "**Who is the current president of ACM globally?**")
+        while True:
+            msg = await bot.wait_for('message', check=check, timeout=90)
+            if msg.content.lower() == "yannis ioannidis":
+                break
+            await member.send("Incorrect. Try again! Hint: It starts with 'Y'.")
+
+        await member.send("🎉 **Congratulations, Digital Explorer!** You've completed the ACM quest. Welcome to the community!")
 
     except Exception as e:
         print(f"Error with {member.name}: {e}")
         try:
-            await member.send("Something went wrong while recording your info.")
+            await member.send("Something went wrong or timed out. Please contact an admin to try again.")
         except:
             pass
 
-# Run the bot
 bot.run(TOKEN)
