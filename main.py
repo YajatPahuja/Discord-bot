@@ -1,75 +1,92 @@
+# cosmic_quest_bot.py
+# DM-driven trivia bot that runs one session per user
+# Final line is exactly: “the answer is tesseract”
+
+import os
+import asyncio
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
-import os
+import webserver
 
+# ── 1. TOKEN ──────────────────────────────────────────────────────────────
 load_dotenv()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+if not TOKEN:
+    raise ValueError("DISCORD_BOT_TOKEN is not set in environment variables")
 
+# ── 2. INTENTS ────────────────────────────────────────────────────────────
 intents = discord.Intents.default()
-intents.members = True
-bot = commands.Bot(command_prefix='!', intents=intents)
+intents.message_content = True        # the only privileged intent we need
 
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+# ── 3. SESSION STATE ──────────────────────────────────────────────────────
+active_sessions: set[int] = set()     # users currently playing
+finished_sessions: set[int] = set()   # users who already finished (optional)
+
+# ── 4. QUEST LOGIC ────────────────────────────────────────────────────────
+async def cosmic_quest(user: discord.User):
+    try:
+        await user.send(
+            "👋 Welcome, Traveler. You’re about to embark on a cosmic journey through time and space..."
+        )
+
+        def check(m: discord.Message):
+            return m.author == user and isinstance(m.channel, discord.DMChannel)
+
+        questions = [
+            ("…Which galaxy did humanity originate from before the void took them?", ["milky way"]),
+            ("…Who first broke the lunar silence?", ["neil armstrong"]),
+            ("…Who first launched into the cosmic abyss?", ["voyager 1"]),
+            ("…Saturn’s moons are the gateway—how many shadows orbit the giant ring?", ["83"]),
+        ]
+
+        for prompt, answers in questions:
+            await user.send(prompt)
+            while True:
+                try:
+                    msg = await bot.wait_for("message", check=check, timeout=30)
+                except asyncio.TimeoutError:
+                    await user.send("⏰ Time’s up! DM me again to restart the quest.")
+                    return
+                if msg.content.lower().strip() in answers:
+                    break
+                await user.send("That’s not quite right. Try again!")
+
+        # Final line (per your spec)
+        await user.send("the answer is tesseract")
+        finished_sessions.add(user.id)
+
+    finally:
+        active_sessions.discard(user.id)   # always unlock
+
+# ── 5. EVENTS ─────────────────────────────────────────────────────────────
 @bot.event
 async def on_ready():
-    print(f'Logged in as {bot.user}')
+    print(f"Logged in as {bot.user} (id={bot.user.id})")
 
 @bot.event
-async def on_member_join(member):
-    try:
-        await member.send("👋 Welcome, Traveler. You're about to embark on a cosmic journey through time and space. Answer each question correctly to continue your mission.\nType your answers to proceed through each level. Let’s begin!")
+async def on_message(message: discord.Message):
+    if message.author == bot.user:
+        return
 
-        def check(m):
-            return m.author == member and isinstance(m.channel, discord.DMChannel)
+    # Run the quest only in DMs
+    if isinstance(message.channel, discord.DMChannel):
+        uid = message.author.id
 
-        await member.send("The Anomaly\n"
-                          "You wake up in a cold pod, suspended in an endless void. Earth is a whisper in your memory, shattered by time. A voice, distorted by static, says: ‘You’ve been asleep for 72 years. The collapse of humanity... it was inevitable. Or was it?’\n\n"
-                          "Which galaxy did humanity originate from before the void took them?")
-        while True:
-            msg = await bot.wait_for('message', check=check, timeout=90)
-            if msg.content.lower() == "milky way":
-                break
-            await member.send("That's not right. Try again!")
+        # Block re-runs for users who finished (remove this if you want replay)
+        if uid in finished_sessions:
+            return
 
-        await member.send("Ghost in the Dust\n"
-                          "A voice echoes, 'Stay, don’t go.' Books fall, but they are unreadable. A storm rages, not outside — but in time. Past memories shift, rearranged in patterns of light and shadow.\n\n"
-                          "Who first broke the lunar silence?")
-        while True:
-            msg = await bot.wait_for('message', check=check, timeout=90)
-            if msg.content.lower() == "neil armstrong":
-                break
-            await member.send("That's not quite right. Try again!")
+        # Start a new session only if none is active
+        if uid not in active_sessions:
+            active_sessions.add(uid)
+            await cosmic_quest(message.author)
 
-        await member.send("Time Dilation\n"
-                          "You orbit near a rogue planet, where time fractures like glass. 1 hour on the planet equals 7 years on the ship. You venture down. They stay behind. When you return, they are dust, but their memories linger in the ship’s walls.\n\n"
-                          "Who first launched into the cosmic abyss, sending humanity’s call into the unknown?")
-        while True:
-            msg = await bot.wait_for('message', check=check, timeout=90)
-            if msg.content.lower() == "voyager 1" or msg.content == "1977":
-                break
-            await member.send("That's not quite right. Try again!")
+    # Let command processors (if any) work
+    await bot.process_commands(message)
 
-        
-        await member.send("The Loop\n"
-                          "*The AI glitches and whispers your daughter's name. But you know — you are her. Or were you always? The universe folds inward, pulling you through an event horizon into the heart of darkness.*\n\n"
-                          "Saturn’s moons are the gateway, but how many shadows orbit the giant ring?")
-        while True:
-            msg = await bot.wait_for('message', check=check, timeout=90)
-            if msg.content == "83":
-                break
-            await member.send("That’s not quite right. Try again!")
-
-    
-        await member.send("The Tesseract\n"
-                          "You float in the kaleidoscope of 5D space, touching past, present, and future in a single breath. You stretch your hand into the past, sending this message back to yourself — the one who will embark on this journey again.\n\n"
-                          "You’ve crossed the paradox. Time, space, and identity are your canvas. The question is: Will you ever wake up from this dream?")
-        await member.send("Congratulations, Traveler! You've completed the cosmic quest and unlocked the paradox. Welcome to the community!")
-
-    except Exception as e:
-        print(f"Error with {member.name}: {e}")
-        try:
-            await member.send("Something went wrong or timed out. Please contact an admin to try again.")
-        except:
-            pass
-
+# ── 6. START ──────────────────────────────────────────────────────────────
+webserver.keep_alive()
 bot.run(TOKEN)
